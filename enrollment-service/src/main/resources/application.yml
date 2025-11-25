@@ -1,16 +1,33 @@
-# application.yml
 server:
   port: 8082
+
 spring:
   application:
-  name: enrollment-service
+    name: enrollment-service
   datasource:
-  url: jdbc:mysql://localhost:3306/enrollment_db?useSSL=false&serverTimezone=UTC
-username: enrollment_user
-password: enrollment_pass
-jpa:
-hibernate:
-ddl-auto: update
-show-sql: true
+    url: jdbc:mysql://localhost:3306/enrollment_db?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&characterEncoding=UTF-8
+    username: enrollment_user
+    password: enrollment_password
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+    defer-datasource-initialization: false
+  sql:
+    init:
+      mode: never  # 确保这是 never
+      schema-locations: ''  # 清空
+      data-locations: ''    # 清空
+
 catalog-service:
   url: http://localhost:8081
+
+# 可选：添加更多日志
+logging:
+  level:
+    org.springframework.jdbc: DEBUG
+    org.springframework.boot.sql.init: DEBUG

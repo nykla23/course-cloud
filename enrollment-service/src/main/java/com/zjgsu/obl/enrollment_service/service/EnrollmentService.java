@@ -10,6 +10,8 @@ import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.RestTemplate;
 
 import java.util.List;
 import java.util.Optional;
@@ -17,14 +19,14 @@ import java.util.Optional;
 @Service
 @Transactional
 public class EnrollmentService {
-    @Autowired
-    private EnrollmentRepository enrollmentRepository;
+    private final EnrollmentRepository enrollmentRepository;
+    private final StudentRepository studentRepository;
+    private final RestTemplate restTemplate;
 
     @Value("${catalog-service.url}")
     private String catalogServiceUrl;
 
-    @Autowired
-    private StudentRepository studentRepository;
+
 
     public List<Enrollment> findAll() {
         return enrollmentRepository.findAll();
@@ -38,8 +40,19 @@ public class EnrollmentService {
      * 创建选课记录 - 完整的事务管理
      * 确保选课操作和课程人数更新的原子性
      */
-    @Transactional(rollbackOn = {Exception.class})
-    public Enrollment createEnrollment(Enrollment enrollment) {
+    @Transactional
+    public Enrollment createEnrollment(String courseId, String studentId) {
+
+        // 1. 验证学生是否存在
+        Student student = studentRepository.findByStudentId(studentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Student",
+                        studentId));
+        String url = catalogServiceUrl + "/courses/" + enrollment.getCourseId();
+        try {
+            restTemplate.getForObject(url, String.class);
+        }catch (HttpServerErrorException e){
+            throw new ResourceNotFoundException("课程不存在，课程ID: " + enrollment.getCourseId());
+        }
         // 参数校验
         if (enrollment == null) {
             throw new IllegalArgumentException("选课信息不能为空");

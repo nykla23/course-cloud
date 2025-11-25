@@ -20,9 +20,8 @@ public class Enrollment {
     @JoinColumn(name = "student_id", nullable = false)
     private Student student;
 
-    @ManyToOne
-    @JoinColumn(name = "course_id", nullable = false)
-    private Course course;
+    @Column(name = "course_id", nullable = false, length = 36)
+    private String courseId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -36,7 +35,7 @@ public class Enrollment {
     private String studentId;
 
     @Transient
-    private String courseId;
+    private Object courseInfo;
 
     @PrePersist
     protected void onCreate() {
@@ -45,50 +44,66 @@ public class Enrollment {
 
     // 构造方法
     public Enrollment() {
-        this.enrolledAt = LocalDateTime.now();
     }
 
-    public Enrollment(String id, String studentId, String courseId) {
-        this.id = id;
-        this.studentId = studentId;
+    public Enrollment(Student student, String courseId) {
+        this.student = student;
         this.courseId = courseId;
-        this.enrolledAt = LocalDateTime.now();
     }
 
-    // getter/setter
-    public String getId() { return id; }
-    public void setId(String id) { this.id = id; }
+    public String getId() {
+        return id;
+    }
 
-    public Student getStudent() { return student; }
+    public void setId(String id) {
+        this.id = id;
+    }
+
+    public Student getStudent() {
+        return student;
+    }
+
     public void setStudent(Student student) {
         this.student = student;
-        if (student != null) {
-            this.studentId = student.getStudentId();
-        }
-    }
-
-    public Course getCourse() { return course; }
-    public void setCourse(Course course) {
-        this.course = course;
-        if (course != null) {
-            this.courseId = course.getCode();
-        }
-    }
-
-    public EnrollmentStatus getStatus() { return status; }
-    public void setStatus(EnrollmentStatus status) { this.status = status; }
-
-    public LocalDateTime getEnrolledAt() { return enrolledAt; }
-    public void setEnrolledAt(LocalDateTime enrolledAt) { this.enrolledAt = enrolledAt; }
-
-    public String getStudentId() {
-        return studentId != null ? studentId : (student != null ? student.getStudentId() : null);
     }
 
     public String getCourseId() {
-        return courseId != null ? courseId : (course != null ? course.getCode() : null);
+        return courseId;
     }
 
-    public void setStudentId(String studentId) { this.studentId = studentId; }
-    public void setCourseId(String courseId) { this.courseId = courseId; }
+    public void setCourseId(String courseId) {
+        this.courseId = courseId;
+    }
+
+    public EnrollmentStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(EnrollmentStatus status) {
+        this.status = status;
+    }
+
+    public LocalDateTime getEnrolledAt() {
+        return enrolledAt;
+    }
+
+    public void setEnrolledAt(LocalDateTime enrolledAt) {
+        this.enrolledAt = enrolledAt;
+    }
+
+    public String getStudentId() {
+        return studentId;
+    }
+
+    public void setStudentId(String studentId) {
+        this.studentId = studentId;
+    }
+
+    public Object getCourseInfo() {
+        return courseInfo;
+    }
+
+    public void setCourseInfo(Object courseInfo) {
+        this.courseInfo = courseInfo;
+    }
 }
