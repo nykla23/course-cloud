@@ -4,10 +4,12 @@ import com.zjgsu.obl.catalog_service.model.Course;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
 
+@Repository
 public interface CourseRepository extends JpaRepository<Course, String> {
 
     // 按课程代码查询课程
@@ -35,5 +37,4 @@ public interface CourseRepository extends JpaRepository<Course, String> {
     List<Course> findByMultipleCriteria(@Param("courseCode") String courseCode,
                                         @Param("instructorId") String instructorId,
                                         @Param("title") String title);
-
 }

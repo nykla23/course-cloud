@@ -1,6 +1,7 @@
 package com.zjgsu.obl.catalog_service.model;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import jakarta.persistence.Embedded;
 
 @JsonInclude(JsonInclude.Include.ALWAYS)
 public class Instructor {

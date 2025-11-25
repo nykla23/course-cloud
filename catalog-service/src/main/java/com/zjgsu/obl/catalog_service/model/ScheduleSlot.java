@@ -1,5 +1,9 @@
 package com.zjgsu.obl.catalog_service.model;
 
+import jakarta.persistence.Embeddable;
+import jakarta.persistence.Embedded;
+
+
 public class ScheduleSlot {
     private String dayOfWeek; // 例如： "MONDAY"
     private String startTime; // 例如： "08:00"
