@@ -1,5 +1,6 @@
 package com.zjgsu.obl.enrollment_service.service;
 
+import com.zjgsu.obl.enrollment_service.exception.BusinessException;
 import com.zjgsu.obl.enrollment_service.exception.ResourceNotFoundException;
 import com.zjgsu.obl.enrollment_service.model.Enrollment;
 import com.zjgsu.obl.enrollment_service.model.EnrollmentStatus;
@@ -7,257 +8,231 @@ import com.zjgsu.obl.enrollment_service.model.Student;
 import com.zjgsu.obl.enrollment_service.respository.EnrollmentRepository;
 import com.zjgsu.obl.enrollment_service.respository.StudentRepository;
 import jakarta.transaction.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
 @Transactional
 public class EnrollmentService {
-    private final EnrollmentRepository enrollmentRepository;
-    private final StudentRepository studentRepository;
-    private final RestTemplate restTemplate;
+    private static final Logger logger = LoggerFactory.getLogger(EnrollmentService.class);
 
-    @Value("${catalog-service.url}")
+    @Autowired
+    private EnrollmentRepository enrollmentRepository;
+
+    @Autowired
+    private StudentRepository studentRepository;
+
+    @Autowired
+    private RestTemplate restTemplate;
+
+    @Value("${catalog-service.url:http://localhost:8081}")
     private String catalogServiceUrl;
 
-
-
+    /**
+     * 获取所有选课记录
+     */
     public List<Enrollment> findAll() {
-        return enrollmentRepository.findAll();
-    }
-
-    public Optional<Enrollment> findById(String id) {
-        return enrollmentRepository.findById(id);
+        List<Enrollment> enrollments = enrollmentRepository.findAll();
+        enrollments.forEach(this::enrichWithCourseInfo);
+        return enrollments;
     }
 
     /**
-     * 创建选课记录 - 完整的事务管理
-     * 确保选课操作和课程人数更新的原子性
+     * 根据ID查询选课记录
+     */
+    public Optional<Enrollment> findById(String id) {
+        Optional<Enrollment> enrollment = enrollmentRepository.findById(id);
+        enrollment.ifPresent(this::enrichWithCourseInfo);
+        return enrollment;
+    }
+
+    /**
+     * 学生选课
      */
     @Transactional
-    public Enrollment createEnrollment(String courseId, String studentId) {
+    public Enrollment enrollStudent(String courseId, String studentId) {
+        logger.info("开始选课: courseId={}, studentId={}", courseId, studentId);
 
         // 1. 验证学生是否存在
-        Student student = studentRepository.findByStudentId(studentId)
-                .orElseThrow(() -> new ResourceNotFoundException("Student",
-                        studentId));
-        String url = catalogServiceUrl + "/courses/" + enrollment.getCourseId();
-        try {
-            restTemplate.getForObject(url, String.class);
-        }catch (HttpServerErrorException e){
-            throw new ResourceNotFoundException("课程不存在，课程ID: " + enrollment.getCourseId());
-        }
-        // 参数校验
-        if (enrollment == null) {
-            throw new IllegalArgumentException("选课信息不能为空");
-        }
-        if (enrollment.getStudentId() == null || enrollment.getCourseId() == null) {
-            throw new IllegalArgumentException("学生ID和课程ID不能为空");
+        Student student = studentRepository.findById(studentId)
+                .orElseThrow(() -> new ResourceNotFoundException("学生不存在: " + studentId));
+
+        // 2. 调用课程目录服务验证课程
+        Map<String, Object> courseInfo = getCourseInfoFromCatalogService(courseId);
+        Integer capacity = (Integer) courseInfo.get("capacity");
+        Integer enrolledCount = (Integer) courseInfo.get("enrolledCount");
+
+        // 3. 检查课程容量
+        if (enrolledCount >= capacity) {
+            throw new BusinessException("课程容量已满，无法选课");
         }
 
-        // 根据 studentId 查找 Student 实体
-        Optional<Student> student = studentRepository.findByStudentId(enrollment.getStudentId());
-        if (student.isEmpty()) {
-            throw new ResourceNotFoundException("学生不存在，学号: " + enrollment.getStudentId());
+        // 4. 检查重复选课
+        if (enrollmentRepository.existsByCourseIdAndStudentIdAndStatus(courseId, studentId)) {
+            throw new BusinessException("该学生已经选过这门课程");
         }
 
-        // 根据 courseId 查找 Course 实体
-        Optional<Course> course = courseRepository.findById(enrollment.getCourseId());
-        if (course.isEmpty()) {
-            throw new ResourceNotFoundException("课程不存在，课程ID: " + enrollment.getCourseId());
-        }
+        // 5. 创建选课记录
+        Enrollment enrollment = new Enrollment();
+        enrollment.setCourseId(courseId);
+        enrollment.setStudent(student);
+        enrollment.setStatus(EnrollmentStatus.ACTIVE);
 
-        Course courseObj = course.get();
-        Student studentObj = student.get();
-
-        // 检查是否已经选过该课程
-        Optional<Enrollment> existingEnrollment = enrollmentRepository.findByCourseAndStudent(courseObj, studentObj);
-        if (existingEnrollment.isPresent()) {
-            Enrollment existing = existingEnrollment.get();
-            if (existing.getStatus() == EnrollmentStatus.ACTIVE) {
-                throw new IllegalArgumentException("该学生已经选过这门课程");
-            } else {
-                // 如果是退课状态，可以重新激活
-                existing.setStatus(EnrollmentStatus.ACTIVE);
-                Enrollment updatedEnrollment = enrollmentRepository.save(existing);
-
-                // 更新课程已选人数
-                updateCourseEnrollmentCount(courseObj);
-                return updatedEnrollment;
-            }
-        }
-
-        // 检查课程容量
-        long currentEnrollments = enrollmentRepository.countActiveEnrollmentsByCourse(courseObj);
-        if (currentEnrollments >= courseObj.getCapacity()) {
-            throw new IllegalArgumentException("课程容量已满，无法选课");
-        }
-
-        // 设置对象关联和默认状态
-        enrollment.setStudent(studentObj);
-        enrollment.setCourse(courseObj);
-        if (enrollment.getStatus() == null) {
-            enrollment.setStatus(EnrollmentStatus.ACTIVE);
-        }
-
-        // 保存选课记录
         Enrollment savedEnrollment = enrollmentRepository.save(enrollment);
 
-        // 更新课程的已选人数
-        updateCourseEnrollmentCount(courseObj);
+        // 6. 更新课程的已选人数
+        updateCourseEnrolledCount(courseId, enrolledCount + 1);
 
+        // 7. 丰富课程信息用于响应
+        enrichWithCourseInfo(savedEnrollment);
+
+        logger.info("选课成功: enrollmentId={}", savedEnrollment.getId());
         return savedEnrollment;
     }
 
     /**
-     * 删除选课记录（退课） - 完整的事务管理
+     * 学生退课
      */
-    @Transactional(rollbackOn = {Exception.class})
-    public boolean deleteEnrollment(String id) {
-        Optional<Enrollment> enrollment = enrollmentRepository.findById(id);
-        if (enrollment.isPresent()) {
-            Enrollment enrollmentObj = enrollment.get();
-            Course course = enrollmentObj.getCourse();
+    @Transactional
+    public boolean dropEnrollment(String enrollmentId) {
+        logger.info("开始退课: enrollmentId={}", enrollmentId);
 
-            // 软删除：将状态改为 DROPPED
-            enrollmentObj.setStatus(EnrollmentStatus.DROPPED);
-            enrollmentRepository.save(enrollmentObj);
+        Optional<Enrollment> enrollmentOpt = enrollmentRepository.findById(enrollmentId);
+        if (enrollmentOpt.isEmpty()) {
+            throw new ResourceNotFoundException("选课记录不存在: " + enrollmentId);
+        }
 
-            // 更新课程的已选人数
-            updateCourseEnrollmentCount(course);
+        Enrollment enrollment = enrollmentOpt.get();
 
-            return true;
-        } else {
-            return false;
+        // 1. 获取当前课程信息
+        Map<String, Object> courseInfo = getCourseInfoFromCatalogService(enrollment.getCourseId());
+        Integer currentEnrolled = (Integer) courseInfo.get("enrolledCount");
+
+        // 2. 更新选课状态为退课
+        enrollment.setStatus(EnrollmentStatus.DROPPED);
+        enrollmentRepository.save(enrollment);
+
+        // 3. 更新课程的已选人数
+        updateCourseEnrolledCount(enrollment.getCourseId(), currentEnrolled - 1);
+
+        logger.info("退课成功: enrollmentId={}", enrollmentId);
+        return true;
+    }
+
+    /**
+     * 从catalog-service获取课程信息
+     */
+    private Map<String, Object> getCourseInfoFromCatalogService(String courseId) {
+        String url = catalogServiceUrl + "/api/courses/" + courseId;
+        logger.debug("调用课程服务: {}", url);
+
+        try {
+            Map<String, Object> response = restTemplate.getForObject(url, Map.class);
+            if (response != null && response.containsKey("data")) {
+                return (Map<String, Object>) response.get("data");
+            } else {
+                throw new ResourceNotFoundException("课程不存在: " + courseId);
+            }
+        } catch (HttpClientErrorException.NotFound e) {
+            throw new ResourceNotFoundException("课程不存在: " + courseId);
+        } catch (Exception e) {
+            logger.error("调用课程服务失败: {}", e.getMessage());
+            throw new BusinessException("课程服务暂时不可用，请稍后重试");
         }
     }
 
     /**
-     * 硬删除选课记录 - 仅用于管理目的
+     * 更新课程的已选人数
      */
-    @Transactional(rollbackOn = {Exception.class})
-    public boolean hardDeleteEnrollment(String id) {
-        Optional<Enrollment> enrollment = enrollmentRepository.findById(id);
-        if (enrollment.isPresent()) {
-            Enrollment enrollmentObj = enrollment.get();
-            Course course = enrollmentObj.getCourse();
+    private void updateCourseEnrolledCount(String courseId, int newCount) {
+        String url = catalogServiceUrl + "/api/courses/" + courseId;
+        Map<String, Object> updateData = Map.of("enrolledCount", newCount);
 
-            // 硬删除：直接从数据库删除记录
-            enrollmentRepository.deleteById(id);
-
-            // 更新课程的已选人数
-            updateCourseEnrollmentCount(course);
-
-            return true;
-        } else {
-            return false;
+        try {
+            restTemplate.put(url, updateData);
+            logger.debug("更新课程人数成功: courseId={}, newCount={}", courseId, newCount);
+        } catch (Exception e) {
+            // 记录错误但不中断流程，采用最终一致性
+            logger.error("更新课程人数失败: courseId={}, error={}", courseId, e.getMessage());
         }
     }
 
     /**
-     * 更新课程已选人数 - 私有方法，确保在事务内执行
+     * 为选课记录丰富课程信息
      */
-    private void updateCourseEnrollmentCount(Course course) {
-        long currentEnrollments = enrollmentRepository.countActiveEnrollmentsByCourse(course);
-        course.setEnrolled((int) currentEnrollments);
-        courseRepository.save(course);
+    private void enrichWithCourseInfo(Enrollment enrollment) {
+        try {
+            Map<String, Object> courseInfo = getCourseInfoFromCatalogService(enrollment.getCourseId());
+            enrollment.setCourseInfo(courseInfo);
+        } catch (Exception e) {
+            logger.warn("获取课程信息失败: courseId={}", enrollment.getCourseId());
+        }
     }
 
     /**
-     * 完成课程 - 将选课状态改为 COMPLETED
+     * 根据课程ID查询选课记录
      */
-    @Transactional(rollbackOn = {Exception.class})
-    public boolean completeEnrollment(String id) {
-        Optional<Enrollment> enrollment = enrollmentRepository.findById(id);
-        if (enrollment.isPresent()) {
-            Enrollment enrollmentObj = enrollment.get();
-            enrollmentObj.setStatus(EnrollmentStatus.COMPLETED);
-            enrollmentRepository.save(enrollmentObj);
-            return true;
-        }
-        return false;
+    public List<Enrollment> findByCourseId(String courseId) {
+        List<Enrollment> enrollments = enrollmentRepository.findByCourseId(courseId);
+        enrollments.forEach(this::enrichWithCourseInfo);
+        return enrollments;
     }
 
-    // 根据课程ID查询选课记录
-    public List<Enrollment> findByCourseId(String courseCode) {
-        return enrollmentRepository.findByCourseCode(courseCode);
-    }
-
-    // 根据学生ID查询选课记录
+    /**
+     * 根据学生ID查询选课记录
+     */
     public List<Enrollment> findByStudentId(String studentId) {
-        return enrollmentRepository.findByStudentId(studentId);
+        List<Enrollment> enrollments = enrollmentRepository.findByStudentId(studentId);
+        enrollments.forEach(this::enrichWithCourseInfo);
+        return enrollments;
     }
 
-    // 检查学生是否有选课记录
+    /**
+     * 根据状态查询选课记录
+     */
+    public List<Enrollment> findByStatus(EnrollmentStatus status) {
+        List<Enrollment> enrollments = enrollmentRepository.findByStatus(status);
+        enrollments.forEach(this::enrichWithCourseInfo);
+        return enrollments;
+    }
+
+    /**
+     * 检查学生是否有选课记录
+     */
     public boolean hasEnrollments(String studentId) {
         return enrollmentRepository.countByStudentId(studentId) > 0;
     }
 
-    // 查询指定状态的选课记录
-    public List<Enrollment> findByStatus(EnrollmentStatus status) {
-        return enrollmentRepository.findByStatus(status);
-    }
-
-    // 统计课程活跃选课人数
-    public long countActiveEnrollmentsByCourse(String courseCode) {
-        Optional<Course> course = courseRepository.findByCourseCode(courseCode);
-        return course.map(c -> enrollmentRepository.countActiveEnrollmentsByCourse(c)).orElse(0L);
-    }
-
-    // 检查学生是否已选某课程（活跃状态）
-    public boolean hasActiveEnrollment(String studentId, String courseCode) {
-        Optional<Student> student = studentRepository.findByStudentId(studentId);
-        Optional<Course> course = courseRepository.findByCourseCode(courseCode);
-
-        if (student.isPresent() && course.isPresent()) {
-            return enrollmentRepository.existsByStudentAndCourseAndActive(student.get(), course.get());
-        }
-        return false;
-    }
-
-    // 多条件组合查询
-    public List<Enrollment> findByMultipleCriteria(String courseCode, String studentId, EnrollmentStatus status) {
-        return enrollmentRepository.findByMultipleCriteria(courseCode, studentId, status);
+    /**
+     * 统计课程活跃选课人数
+     */
+    public long countActiveEnrollmentsByCourse(String courseId) {
+        return enrollmentRepository.countActiveEnrollmentsByCourse(courseId);
     }
 
     /**
-     * 批量选课 - 为多个学生同时选课
+     * 检查学生是否已选某课程
      */
-    @Transactional(rollbackOn = {Exception.class})
-    public List<Enrollment> batchCreateEnrollments(List<Enrollment> enrollments) {
-        if (enrollments == null || enrollments.isEmpty()) {
-            throw new IllegalArgumentException("选课列表不能为空");
-        }
-
-        List<Enrollment> createdEnrollments = new java.util.ArrayList<>();
-        for (Enrollment enrollment : enrollments) {
-            try {
-                Enrollment created = createEnrollment(enrollment);
-                createdEnrollments.add(created);
-            } catch (Exception e) {
-                // 如果单个选课失败，记录日志但继续处理其他选课
-                // 由于在事务中，所有操作都会在最终异常时回滚
-                System.err.println("选课失败: " + e.getMessage());
-                throw new RuntimeException("批量选课过程中发生错误: " + e.getMessage(), e);
-            }
-        }
-        return createdEnrollments;
+    public boolean hasActiveEnrollment(String studentId, String courseId) {
+        return enrollmentRepository.existsByCourseIdAndStudentIdAndStatus(courseId, studentId);
     }
 
     /**
-     * 获取课程的活跃选课列表
+     * 多条件组合查询
      */
-    public List<Enrollment> findActiveEnrollmentsByCourse(String courseCode) {
-        Optional<Course> course = courseRepository.findByCourseCode(courseCode);
-        if (course.isPresent()) {
-            return enrollmentRepository.findByCourseAndStatus(course.get(), EnrollmentStatus.ACTIVE);
-        }
-        return List.of();
+    public List<Enrollment> findByMultipleCriteria(String courseId, String studentId, EnrollmentStatus status) {
+        List<Enrollment> enrollments = enrollmentRepository.findByMultipleCriteria(courseId, studentId, status);
+        enrollments.forEach(this::enrichWithCourseInfo);
+        return enrollments;
     }
 }

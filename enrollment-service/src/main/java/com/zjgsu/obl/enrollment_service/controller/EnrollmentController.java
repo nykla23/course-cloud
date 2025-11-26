@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/enrollments")
@@ -19,27 +20,40 @@ public class EnrollmentController {
 
     // 学生选课
     @PostMapping
-    public ResponseEntity<ApiResponse<Enrollment>> createEnrollment(@RequestBody Enrollment enrollment) {
+    public ResponseEntity<ApiResponse<Enrollment>> createEnrollment(@RequestBody Map<String, String> request) {
         try {
-            Enrollment createdEnrollment = enrollmentService.createEnrollment(enrollment);
+            String courseId = request.get("courseId");
+            String studentId = request.get("studentId");
+
+            if (courseId == null || studentId == null) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(ApiResponse.error(400, "课程ID和学生ID不能为空"));
+            }
+
+            Enrollment enrollment = enrollmentService.enrollStudent(courseId, studentId);
             return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(ApiResponse.success("Enrollment created successfully", createdEnrollment));
+                    .body(ApiResponse.success("选课成功", enrollment));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(ApiResponse.error(400, e.getMessage()));
         }
     }
 
-    // 退选
+    // 学生退课
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>> deleteEnrollment(@PathVariable String id) {
-        boolean deleted = enrollmentService.deleteEnrollment(id);
-        if (deleted) {
-            return ResponseEntity.status(HttpStatus.NO_CONTENT)
-                    .body(ApiResponse.success("Enrollment deleted successfully", null));
-        } else {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(ApiResponse.error(404, "Enrollment not found"));
+        try {
+            boolean deleted = enrollmentService.dropEnrollment(id);
+            if (deleted) {
+                return ResponseEntity.status(HttpStatus.NO_CONTENT)
+                        .body(ApiResponse.success("退课成功", null));
+            } else {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(ApiResponse.error(404, "选课记录不存在"));
+            }
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(ApiResponse.error(400, e.getMessage()));
         }
     }
 

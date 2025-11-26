@@ -22,12 +22,12 @@ FROM eclipse-temurin:17-jre-alpine
 # 应用元数据
 LABEL maintainer="your-email@example.com"
 LABEL version="1.0.0"
-LABEL description="Enrollment Service for Campus Course Selection System"
+LABEL description="Catalog Service for Campus Course Selection System"
 
-# 安装必要的工具（健康检查需要）
+# 安装必要的工具
 RUN apk add --no-cache curl
 
-# 创建非 root 用户运行应用（安全最佳实践）
+# 创建非 root 用户
 RUN addgroup -S spring && adduser -S spring -G spring
 
 # 设置工作目录
@@ -43,19 +43,15 @@ RUN mkdir -p /app/logs && chown -R spring:spring /app
 USER spring
 
 # 暴露端口
-EXPOSE 8082
+EXPOSE 8081
 
 # 环境变量配置
 ENV SPRING_PROFILES_ACTIVE=docker
 ENV JAVA_OPTS="-Xmx512m -Xms256m -XX:+UseG1GC -XX:MaxRAMPercentage=75 -Djava.security.egd=file:/dev/./urandom"
-ENV SPRING_CONFIG_IMPORT="optional:file:/app/config/application-docker.yml"
 
 # 健康检查配置
 HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8082/actuator/health || exit 1
+    CMD curl -f http://localhost:8081/actuator/health || exit 1
 
 # 优化 JVM 启动参数
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]
-
-# 启动命令（可以覆盖 ENTRYPOINT）
-CMD ["java", "-jar", "app.jar"]

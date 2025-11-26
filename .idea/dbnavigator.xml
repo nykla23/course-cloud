@@ -24,14 +24,19 @@
   </component>
   <component name="DBNavigator.Project.DatabaseConsoleManager">
     <connection id="fe05d4c1-5a03-4484-aac5-25efb59a2429">
-      <console name="Connection" type="STANDARD" schema="catalog_db" session="Main"><![CDATA[SELECT * FROM courses;]]></console>
+      <console name="Connection" type="STANDARD" schema="enrollment_db" session="Main"><![CDATA[SELECT * FROM courses;
+
+
+select * from enrollments;]]></console>
     </connection>
   </component>
   <component name="DBNavigator.Project.DatabaseEditorStateManager">
     <last-used-providers />
   </component>
   <component name="DBNavigator.Project.DatabaseFileManager">
-    <open-files />
+    <open-files>
+      <object connection-id="fe05d4c1-5a03-4484-aac5-25efb59a2429" object-ref="consoles/Connection" />
+    </open-files>
   </component>
   <component name="DBNavigator.Project.DatabaseSessionManager">
     <connection id="fe05d4c1-5a03-4484-aac5-25efb59a2429" />
