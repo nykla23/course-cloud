@@ -3,20 +3,25 @@ package com.zjgsu.obl.catalog_service.controller;
 
 
 import com.zjgsu.obl.catalog_service.common.ApiResponse;
+import com.zjgsu.obl.catalog_service.exception.ResourceNotFoundException;
 import com.zjgsu.obl.catalog_service.model.Course;
 import com.zjgsu.obl.catalog_service.service.CourseService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/courses")
 public class CourseController {
     @Autowired
     private CourseService courseService;
+
+    private static final Logger logger = LoggerFactory.getLogger(CourseController.class);
 
     // 查询所有课程
     @GetMapping
@@ -47,15 +52,36 @@ public class CourseController {
         }
     }
 
-    // 更新课程
-    @PutMapping("/{id}")
-    public ResponseEntity<ApiResponse<Course>> updateCourse(@PathVariable String id, @RequestBody Course course) {
-        Course updatedCourse = courseService.updateCourse(id, course);
-        if (updatedCourse != null) {
-            return ResponseEntity.ok(ApiResponse.success("Course updated successfully", updatedCourse));
-        } else {
+//    // 更新课程
+//    @PutMapping("/{id}")
+//    public ResponseEntity<ApiResponse<Course>> updateCourse(@PathVariable String id, @RequestBody Course course) {
+//        Course updatedCourse = courseService.updateCourse(id, course);
+//        if (updatedCourse != null) {
+//            return ResponseEntity.ok(ApiResponse.success("Course updated successfully", updatedCourse));
+//        } else {
+//            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+//                    .body(ApiResponse.error(404, "Course not found"));
+//        }
+//    }
+
+    // 在 CourseController.java 中添加部分更新接口
+    @PatchMapping("/{id}")
+    public ResponseEntity<ApiResponse<Course>> partialUpdateCourse(
+            @PathVariable String id,
+            @RequestBody Map<String, Object> updates) {
+        try {
+            logger.info("部分更新课程: id={}, updates={}", id, updates);
+
+            Course updatedCourse = courseService.partialUpdate(id, updates);
+            return ResponseEntity.ok(ApiResponse.success("课程更新成功", updatedCourse));
+
+        } catch (ResourceNotFoundException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(ApiResponse.error(404, "Course not found"));
+                    .body(ApiResponse.error(404, e.getMessage()));
+        } catch (Exception e) {
+            logger.error("部分更新课程失败: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(ApiResponse.error(400, e.getMessage()));
         }
     }
 

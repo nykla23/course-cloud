@@ -12,11 +12,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -59,45 +60,104 @@ public class EnrollmentService {
     /**
      * 学生选课
      */
-    @Transactional
+//    @Transactional
+//    public Enrollment enrollStudent(String courseId, String studentId) {
+//        logger.info("开始选课: courseId={}, studentId={}", courseId, studentId);
+//
+//        // 1. 验证学生是否存在
+//        Student student = studentRepository.findById(studentId)
+//                .orElseThrow(() -> new ResourceNotFoundException("学生不存在: " + studentId));
+//
+//        // 2. 调用课程目录服务验证课程
+//        Map<String, Object> courseInfo = getCourseInfoFromCatalogService(courseId);
+//        Integer capacity = (Integer) courseInfo.get("capacity");
+//        Integer enrolledCount = (Integer) courseInfo.get("enrolledCount");
+//        if (enrolledCount == null) {
+//            enrolledCount = 0;
+//            logger.warn("课程 {} 的 enrolledCount 为 null，已设置为 0", courseId);
+//        }
+//
+//        // 3. 检查课程容量
+//        if (enrolledCount >= capacity) {
+//            throw new BusinessException("课程容量已满，无法选课");
+//        }
+//
+//        // 4. 检查重复选课
+//        if (enrollmentRepository.existsByCourseIdAndStudentIdAndStatus(courseId, studentId)) {
+//            throw new BusinessException("该学生已经选过这门课程");
+//        }
+//
+//        // 5. 创建选课记录
+//        Enrollment enrollment = new Enrollment();
+//        enrollment.setCourseId(courseId);
+//        enrollment.setStudent(student);
+//        enrollment.setStatus(EnrollmentStatus.ACTIVE);
+//
+//        Enrollment savedEnrollment = enrollmentRepository.save(enrollment);
+//
+//        // 6. 更新课程的已选人数
+//        updateCourseEnrolledCount(courseId, enrolledCount + 1);
+//
+//        // 7. 丰富课程信息用于响应
+//        enrichWithCourseInfo(savedEnrollment);
+//
+//        logger.info("选课成功: enrollmentId={}", savedEnrollment.getId());
+//        return savedEnrollment;
+//    }
+
+    /**
+     * 学生选课 - 完整修复版本
+     */
+    @Transactional(rollbackOn = Exception.class)
     public Enrollment enrollStudent(String courseId, String studentId) {
         logger.info("开始选课: courseId={}, studentId={}", courseId, studentId);
 
-        // 1. 验证学生是否存在
-        Student student = studentRepository.findById(studentId)
-                .orElseThrow(() -> new ResourceNotFoundException("学生不存在: " + studentId));
+        try {
+            // 1. 验证学生是否存在
+            Student student = studentRepository.findById(studentId)
+                    .orElseThrow(() -> new ResourceNotFoundException("学生不存在: " + studentId));
 
-        // 2. 调用课程目录服务验证课程
-        Map<String, Object> courseInfo = getCourseInfoFromCatalogService(courseId);
-        Integer capacity = (Integer) courseInfo.get("capacity");
-        Integer enrolledCount = (Integer) courseInfo.get("enrolledCount");
+            // 2. 调用课程目录服务验证课程
+            Map<String, Object> courseInfo = getCourseInfoFromCatalogService(courseId);
+            Integer capacity = (Integer) courseInfo.get("capacity");
+            Integer enrolledCount = (Integer) courseInfo.get("enrolledCount");
+            if (enrolledCount == null) {
+                enrolledCount = 0;
+                logger.warn("课程 {} 的 enrolledCount 为 null，已设置为 0", courseId);
+            }
 
-        // 3. 检查课程容量
-        if (enrolledCount >= capacity) {
-            throw new BusinessException("课程容量已满，无法选课");
+            // 3. 检查课程容量
+            if (enrolledCount >= capacity) {
+                throw new BusinessException("课程容量已满，无法选课");
+            }
+
+            // 4. 检查重复选课
+            if (enrollmentRepository.existsByCourseIdAndStudentIdAndStatus(courseId, studentId)) {
+                throw new BusinessException("该学生已经选过这门课程");
+            }
+
+            // 5. 创建选课记录
+            Enrollment enrollment = new Enrollment();
+            enrollment.setCourseId(courseId);
+            enrollment.setStudent(student);
+            enrollment.setStatus(EnrollmentStatus.ACTIVE);
+
+            Enrollment savedEnrollment = enrollmentRepository.save(enrollment);
+
+            // 6. 更新课程的已选人数 - 关键修复！
+            updateCourseEnrolledCount(courseId, enrolledCount + 1);
+
+            // 7. 丰富课程信息用于响应
+            enrichWithCourseInfo(savedEnrollment);
+
+            logger.info("选课成功: enrollmentId={}", savedEnrollment.getId());
+            return savedEnrollment;
+
+        } catch (Exception e) {
+            logger.error("选课失败: courseId={}, studentId={}, error={}",
+                    courseId, studentId, e.getMessage());
+            throw new BusinessException("选课失败: " + e.getMessage());
         }
-
-        // 4. 检查重复选课
-        if (enrollmentRepository.existsByCourseIdAndStudentIdAndStatus(courseId, studentId)) {
-            throw new BusinessException("该学生已经选过这门课程");
-        }
-
-        // 5. 创建选课记录
-        Enrollment enrollment = new Enrollment();
-        enrollment.setCourseId(courseId);
-        enrollment.setStudent(student);
-        enrollment.setStatus(EnrollmentStatus.ACTIVE);
-
-        Enrollment savedEnrollment = enrollmentRepository.save(enrollment);
-
-        // 6. 更新课程的已选人数
-        updateCourseEnrolledCount(courseId, enrolledCount + 1);
-
-        // 7. 丰富课程信息用于响应
-        enrichWithCourseInfo(savedEnrollment);
-
-        logger.info("选课成功: enrollmentId={}", savedEnrollment.getId());
-        return savedEnrollment;
     }
 
     /**
@@ -154,16 +214,54 @@ public class EnrollmentService {
     /**
      * 更新课程的已选人数
      */
+//    private void updateCourseEnrolledCount(String courseId, int newCount) {
+//        String url = catalogServiceUrl + "/api/courses/" + courseId;
+//        Map<String, Object> updateData = Map.of("enrolledCount", newCount);
+//
+//        logger.info("准备更新课程人数: courseId={}, newCount={}", courseId, newCount);
+//        logger.info("调用URL: {}", url);
+//        logger.info("请求数据: {}", updateData);
+//
+//        try {
+//            restTemplate.put(url, updateData);
+//            logger.info("更新课程人数成功: courseId={}, newCount={}", courseId, newCount);
+//        } catch (Exception e) {
+//            logger.error("更新课程人数失败: courseId={}, error={}", courseId, e.getMessage());
+//            logger.error("异常详情:", e);
+//        }
+//    }
+
+    /**
+     * 更新课程的已选人数 - 修复版本
+     */
     private void updateCourseEnrolledCount(String courseId, int newCount) {
         String url = catalogServiceUrl + "/api/courses/" + courseId;
         Map<String, Object> updateData = Map.of("enrolledCount", newCount);
 
+        logger.info("准备更新课程人数: courseId={}, newCount={}", courseId, newCount);
+        logger.info("调用URL: {}", url);
+        logger.info("请求数据: {}", updateData);
+
         try {
-            restTemplate.put(url, updateData);
-            logger.debug("更新课程人数成功: courseId={}, newCount={}", courseId, newCount);
+            // 使用 PATCH 方法
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(updateData, headers);
+
+            ResponseEntity<String> response = restTemplate.exchange(
+                    url, HttpMethod.PATCH, requestEntity, String.class);
+
+            if (response.getStatusCode().is2xxSuccessful()) {
+                logger.info("更新课程人数成功: courseId={}, newCount={}", courseId, newCount);
+            } else {
+                logger.error("更新课程人数失败: 状态码={}, 响应={}",
+                        response.getStatusCode(), response.getBody());
+            }
         } catch (Exception e) {
-            // 记录错误但不中断流程，采用最终一致性
             logger.error("更新课程人数失败: courseId={}, error={}", courseId, e.getMessage());
+            logger.error("异常详情:", e);
+            // 重要：如果更新失败，抛出异常让事务回滚
+            throw new BusinessException("更新课程人数失败: " + e.getMessage());
         }
     }
 

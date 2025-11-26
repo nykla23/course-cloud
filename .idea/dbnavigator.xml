@@ -27,7 +27,13 @@
       <console name="Connection" type="STANDARD" schema="enrollment_db" session="Main"><![CDATA[SELECT * FROM courses;
 
 
-select * from enrollments;]]></console>
+select * from enrollments;
+
+select * from students;
+
+drop table enrollments;
+drop table students;
+drop table courses;]]></console>
     </connection>
   </component>
   <component name="DBNavigator.Project.DatabaseEditorStateManager">
@@ -101,7 +107,7 @@ select * from enrollments;]]></console>
           <session-management value="true" />
           <ddl-file-binding value="true" />
           <database-logging value="true" />
-          <connect-automatically value="true" />
+          <connect-automatically value="false" />
           <restore-workspace value="true" />
           <restore-workspace-deep value="false" />
           <environment-type value="default" />

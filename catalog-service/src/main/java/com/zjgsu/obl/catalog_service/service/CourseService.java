@@ -1,14 +1,17 @@
 package com.zjgsu.obl.catalog_service.service;
 
+import com.zjgsu.obl.catalog_service.exception.ResourceNotFoundException;
 import com.zjgsu.obl.catalog_service.model.Course;
 import com.zjgsu.obl.catalog_service.model.Instructor;
 import com.zjgsu.obl.catalog_service.model.ScheduleSlot;
 import com.zjgsu.obl.catalog_service.repository.CourseRepository;
+import com.zjgsu.obl.enrollment_service.exception.BusinessException;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
@@ -16,6 +19,8 @@ import java.util.Optional;
 public class CourseService {
     @Autowired
     private CourseRepository courseRepository;
+
+    private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(CourseService.class);
 
     public List<Course> findAll() {
         return courseRepository.findAll();
@@ -140,5 +145,47 @@ public class CourseService {
 
     public List<Course> findByMultipleCriteria(String code, String instructorId,String title) {
         return courseRepository.findByMultipleCriteria(code, instructorId, title);
+    }
+
+    @Transactional
+    public Course partialUpdate(String courseId, Map<String, Object> updates) {
+        Course existingCourse = courseRepository.findById(courseId)
+                .orElseThrow(() -> new ResourceNotFoundException("课程不存在: " + courseId));
+
+        logger.info("开始部分更新课程: id={}, updates={}", courseId, updates);
+
+        // 处理 enrolledCount 更新
+        if (updates.containsKey("enrolledCount")) {
+            Object value = updates.get("enrolledCount");
+            if (value != null) {
+                try {
+                    int enrolledCount;
+                    if (value instanceof Integer) {
+                        enrolledCount = (Integer) value;
+                    } else if (value instanceof Number) {
+                        enrolledCount = ((Number) value).intValue();
+                    } else {
+                        enrolledCount = Integer.parseInt(value.toString());
+                    }
+                    existingCourse.setEnrolledCount(enrolledCount);
+                    logger.info("更新课程人数成功: id={}, newCount={}", courseId, enrolledCount);
+                } catch (NumberFormatException e) {
+                    logger.warn("enrolledCount 格式错误: {}", value);
+                    throw new BusinessException("enrolledCount 格式错误: " + value);
+                }
+            }
+        }
+
+        // 可以添加其他字段的更新逻辑
+        if (updates.containsKey("capacity")) {
+            Object value = updates.get("capacity");
+            if (value != null) {
+                existingCourse.setCapacity((Integer) value);
+            }
+        }
+
+        Course updatedCourse = courseRepository.save(existingCourse);
+        logger.info("课程部分更新完成: id={}", courseId);
+        return updatedCourse;
     }
 }
