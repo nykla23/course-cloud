@@ -3,15 +3,6 @@ version: '3.8'
 networks:
   course-network:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16
-
-volumes:
-  catalog-data:
-    driver: local
-  enrollment-data:
-    driver: local
 
 services:
   # 课程目录数据库
@@ -23,25 +14,20 @@ services:
       MYSQL_DATABASE: catalog_db
       MYSQL_USER: catalog_user
       MYSQL_PASSWORD: catalog_pass
-      MYSQL_INITDB_SKIP_TZINFO: 1
     ports:
       - "3307:3306"
     volumes:
       - catalog-data:/var/lib/mysql
-      - ./sql/catalog-init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - course-network
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
-      - --default-authentication-plugin=mysql_native_password
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "catalog_user", "-pcatalog_pass"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s
-    restart: unless-stopped
 
   # 选课数据库
   enrollment-db:
@@ -52,25 +38,20 @@ services:
       MYSQL_DATABASE: enrollment_db
       MYSQL_USER: enrollment_user
       MYSQL_PASSWORD: enrollment_pass
-      MYSQL_INITDB_SKIP_TZINFO: 1
     ports:
       - "3308:3306"
     volumes:
       - enrollment-data:/var/lib/mysql
-      - ./sql/enrollment-init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - course-network
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
-      - --default-authentication-plugin=mysql_native_password
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "enrollment_user", "-penrollment_pass"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s
-    restart: unless-stopped
 
   # 课程目录服务
   catalog-service:
@@ -80,10 +61,10 @@ services:
     container_name: catalog-service
     environment:
       SPRING_PROFILES_ACTIVE: docker
-      SPRING_DATASOURCE_URL: jdbc:mysql://catalog-db:3306/catalog_db?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&characterEncoding=UTF-8
+      SPRING_DATASOURCE_URL: jdbc:mysql://catalog-db:3306/catalog_db?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
       SPRING_DATASOURCE_USERNAME: catalog_user
       SPRING_DATASOURCE_PASSWORD: catalog_pass
-      JAVA_OPTS: "-Xmx512m -Xms256m -XX:+UseG1GC -Djava.security.egd=file:/dev/./urandom"
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
     ports:
       - "8081:8081"
     depends_on:
@@ -91,18 +72,7 @@ services:
         condition: service_healthy
     networks:
       - course-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
     restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
 
   # 选课服务
   enrollment-service:
@@ -112,29 +82,22 @@ services:
     container_name: enrollment-service
     environment:
       SPRING_PROFILES_ACTIVE: docker
-      SPRING_DATASOURCE_URL: jdbc:mysql://enrollment-db:3306/enrollment_db?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&characterEncoding=UTF-8
+      SPRING_DATASOURCE_URL: jdbc:mysql://enrollment-db:3306/enrollment_db?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
       SPRING_DATASOURCE_USERNAME: enrollment_user
       SPRING_DATASOURCE_PASSWORD: enrollment_pass
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
       CATALOG_SERVICE_URL: http://catalog-service:8081
-      JAVA_OPTS: "-Xmx512m -Xms256m -XX:+UseG1GC -Djava.security.egd=file:/dev/./urandom"
     ports:
       - "8082:8082"
     depends_on:
       enrollment-db:
         condition: service_healthy
       catalog-service:
-        condition: service_healthy
+        condition: service_started
     networks:
       - course-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
     restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+
+volumes:
+  catalog-data:
+  enrollment-data:
