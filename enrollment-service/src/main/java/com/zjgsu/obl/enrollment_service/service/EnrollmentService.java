@@ -232,7 +232,7 @@ public class EnrollmentService {
 //    }
 
     /**
-     * 更新课程的已选人数 - 修复版本
+     * 更新课程的已选人数 - 使用 PUT 方法
      */
     private void updateCourseEnrolledCount(String courseId, int newCount) {
         String url = catalogServiceUrl + "/api/courses/" + courseId;
@@ -249,7 +249,7 @@ public class EnrollmentService {
             HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(updateData, headers);
 
             ResponseEntity<String> response = restTemplate.exchange(
-                    url, HttpMethod.PATCH, requestEntity, String.class);
+                    url, HttpMethod.PUT, requestEntity, String.class);
 
             if (response.getStatusCode().is2xxSuccessful()) {
                 logger.info("更新课程人数成功: courseId={}, newCount={}", courseId, newCount);
