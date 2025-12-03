@@ -2,7 +2,6 @@
 .gitignore
 README.md
 Dockerfile
-target/
 *.iml
 .idea/
 .settings/

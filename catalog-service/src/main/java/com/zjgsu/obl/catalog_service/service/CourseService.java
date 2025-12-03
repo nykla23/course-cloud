@@ -1,11 +1,12 @@
 package com.zjgsu.obl.catalog_service.service;
 
+import com.zjgsu.obl.catalog_service.exception.BusinessException;
 import com.zjgsu.obl.catalog_service.exception.ResourceNotFoundException;
 import com.zjgsu.obl.catalog_service.model.Course;
 import com.zjgsu.obl.catalog_service.model.Instructor;
 import com.zjgsu.obl.catalog_service.model.ScheduleSlot;
 import com.zjgsu.obl.catalog_service.repository.CourseRepository;
-import com.zjgsu.obl.enrollment_service.exception.BusinessException;
+
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
